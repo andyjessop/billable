@@ -1,0 +1,13 @@
+{
+    "name": "andyjessop/billable",
+    "description": "A trait that provides cashier-like methods for cartalyst's stripe-laravel package",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Andy Jessop",
+            "email": "andrewdjessop@gmail.com"
+        }
+    ],
+    "minimum-stability": "dev",
+    "require": {}
+}
