@@ -2,6 +2,10 @@
 
 use Cartalyst\Stripe\Stripe;
 use Illuminate\Support\Facades\Config;
+use Carbon\Carbon;
+use App\Subscription;
+use App\User;
+use App\Student;
 
 /**
  * trait BillableTrait
@@ -9,319 +13,341 @@ use Illuminate\Support\Facades\Config;
  */
 trait BillableTrait {
 
+    /**
+     * STRIPE
+     * ======
+     */
+    
 	public function getStripeKey()
 	{
 		return Config::get('services.stripe.secret');
 	}
 
-    public function test()
+    public function getStripe()
     {
-        return 1;
+        return (new Stripe($this->getStripeKey()));
+    }
+
+    /**
+     * ACCOUNT
+     * =============
+     */
+
+    /**
+     * Find out whether or not there is a stripe account for this user
+     * User table must have a stripe_id column
+     * @return boolean
+     */
+	public function readyForBilling()
+    {
+        return ! is_null($this->stripe_id);
+    }
+
+    /**
+     * Create a new stripe account for this user
+     * @param  string $token    A card token string
+     * @param  array  $metadata
+     * @return array 
+     */
+    public function createCustomer($token, $metadata = [])
+    {
+        // Create account with stripe
+        $stripe = $this->getStripe();
+        $customer = $stripe->customers()->create([
+            'source' => $token,
+            'metadata' => $metadata
+        ]);
+
+        // Add stripe_id to users table
+        $this->stripe_id = $customer['id'];
+
+        return $customer;
+    }
+
+    /**
+     * Retrieve stripe details for this user
+     * @return array           
+     */
+    public function getCustomer()
+    {
+        $stripe = $this->getStripe();
+        return $stripe->customers()->find($this->stripe_id);
+    }
+
+    /**
+     * Add a card to account
+     * @param string|Array $card - either a token or an array
+     */
+    public function addCard($card)
+    {
+        $stripe = $this->getStripe();
+        return $stripe->cards()->create($this->stripe_id, $card);
+    }
+
+    /**
+     * Retrieve card details
+     * @param  string $card - stripe card unique identifier
+     * @return array
+     */
+    public function getCard($card)
+    {
+        $stripe = $this->getStripe();
+        return $stripe->cards()->find($this->stripe_id, $card);
+    }
+
+    /**
+     * Retrieve cards details
+     * @return array
+     */
+    public function getCards()
+    {
+        $stripe = $this->getStripe();
+        return $stripe->cards()->all($this->stripe_id);
+    }
+
+    /**
+     * Update card details
+     * @param  string $card - stripe card unique identifier
+     * @param  array $details - details to update
+     * @return array
+     */
+    public function updateCard($card, $details)
+    {
+        $stripe = $this->getStripe();
+        return $stripe->cards()->update($this->stripe_id, $card, $details);
+    }
+
+    /**
+     * Delete card details
+     * @param  string $card - stripe card unique identifier
+     * @return array
+     */
+    public function deleteCard($card)
+    {
+        $stripe = $this->getStripe();
+        return $stripe->cards()->delete($this->stripe_id, $card);
+    }
+
+    /**
+     * Make a card the default card for the customer
+     * @param  string $card - stripe card unique identifier
+     * @return array
+     */
+    public function makeDefaultCard($card)
+    {
+        $stripe = $this->getStripe();
+        return $stripe->customers()->update($this->stripe_id, ['default_source' => $card]);
+    }
+
+    /**
+     * Get the default card for this customer
+     * @return array
+     */
+    public function getDefaultCard()
+    {
+        $stripe = $this->getStripe();
+        $customer = $stripe->customers()->find($this->stripe_id);
+        $card = $customer['default_source'];
+        return $this->getCard($card);
+    }
+
+    /**
+     * Get the last four digits of a given card
+     * @param  string $card - stripe identifier
+     * @return string
+     */
+    public function getLastFourDigits($card)
+    {
+        return $card['last4'];
     }
     
-	public function charge($amount, array $options = array())
+    /**
+     * Find an invoice by invoice id.
+     *
+     * @param  string  $invoice - stripe unique identifier
+     * @return array
+     */
+    public function findInvoice($invoice)
     {
-    	$stripe = new Stripe($this->getStripeKey());
-
-        return (new StripeGateway($this))->charge($amount, $options);
-    }
-
-    /* 
-		Required Methods
-		================
-
-		addCard
-		updateCard
-		removeCard
-		makeDefaultCard
-
-		getInvoices
-		findInvoice
-		downloadInvoice
-
-		onTrial
-		getTrialEndDate
-		setTrialEndDate
-		endTrial
-		onGracePeriod
-
-		isSubscribedTo
-		getSubscriptions
-		getSubscriptionEndDate
-		setSubscriptionEndDate
-
-		readyForBilling
-		getStripeId
-		getStripeEmail
-		getDefaultCard
-		getLastFourDigits
-
-    */
-}
-
-
-/*
-    protected static $stripeKey;
-
-    public function getBillableName()
-    {
-        return $this->email;
-    }
- 
-    public function saveBillableInstance()
-    {
-        $this->save();
-    }
-
-    public function charge($amount, array $options = array())
-    {
-        return (new StripeGateway($this))->charge($amount, $options);
-    }
- 
-    public function subscription($plan = null)
-    {
-        return new StripeGateway($this, $plan);
-  }
-    public function invoice()
-    {
-        return $this->subscription()->invoice();
-    }
-    
-   
-    public function findInvoice($id)
-    {
-        $invoice = $this->subscription()->findInvoice($id);
-        if ($invoice && $invoice->customer == $this->getStripeId()) {
+        $stripe = $this->getStripe();
+        $invoice $this->invoices()->find($id);
+        if ($invoice && $invoice['customer'] == $this->stripe_id) {
             return $invoice;
         }
-   }
-    public function findInvoiceOrFail($id)
-    {
-        $invoice = $this->findInvoice($id);
-        if (is_null($invoice)) {
-            throw new NotFoundHttpException;
-        } else {
-            return $invoice;
-        }
-    }
-  
-    public function invoiceFile($id, array $data)
-    {
-        return $this->findInvoiceOrFail($id)->file($data);
+
+        return null;
     }
 
-    public function downloadInvoice($id, array $data)
+    /**
+     * Get an array of the entity's invoices.
+     * @return array
+     */
+    public function invoices()
     {
-        return $this->findInvoiceOrFail($id)->download($data);
+        $stripe = $this->getStripe();
+        $params = [$this->stripe_id];
+        return $this->invoices()->all($params);
     }
 
-    public function invoices($parameters = array())
-    {
-        return $this->subscription()->invoices(false, $parameters);
-    }
-
+    /**
+     *  Get the entity's upcoming invoice.
+     *
+     * @return array
+     */
     public function upcomingInvoice()
     {
-        return $this->subscription()->upcomingInvoice();
+        $stripe = $this->getStripe();
+        $params = [$this->stripe_id];
+        return $this->invoices()->upcomingInvoice($params);
     }
 
-    public function updateCard($token)
+
+    /**
+     * SUBSCRIPTIONS
+     * =============
+     */
+    
+    /**
+     * Get all subscriptions for this customer
+     * @return array
+     */
+    public function getSubscriptions()
     {
-        return $this->subscription()->updateCard($token);
+        $stripe = $this->getStripe();
+        return $stripe->subscriptions()->all($this->stripe_id);
     }
 
-    public function applyCoupon($coupon)
+    /**
+     * Get subscription
+     * @param  string $subscription - stripe unique identifier
+     * @return array
+     */
+    public function getSubscription($subscription)
     {
-        return $this->subscription()->applyCoupon($coupon);
+        $stripe = $this->getStripe();
+        return $stripe->subscriptions()->find($this->stripe_id, $subscription);
     }
 
-    public function onTrial()
+    /**
+     * Update a subscription
+     * @param  string $subscription - stripe unique identifier
+     * @param  array $params      
+     * @return array
+     */
+    public function updateSubscription($subscription, $params)
     {
-        if (! is_null($this->getTrialEndDate())) {
-            return Carbon::today()->lt($this->getTrialEndDate());
+        $stripe = $this->getStripe();
+        return $stripe->subscriptions()->update($this->stripe_id, $subscription, $params);
+    }
+
+    /**
+     * Get subscription trial start date
+     * @param  string $subscription - stripe unique identifier
+     * @return array
+     */
+    public function getTrialStartDate($subscription)
+    {
+        $stripe = $this->getStripe();
+        $subscription = $stripe->subscriptions()->find($this->stripe_id, $subscription);
+        return $subscription['trial_start'];
+    }
+
+    /**
+     * Get subscription trial end date
+     * @param  string $subscription - stripe unique identifier
+     * @return array
+     */
+    public function getTrialEndDate($subscription)
+    {
+        $stripe = $this->getStripe();
+        $subscription = $stripe->subscriptions()->find($this->stripe_id, $subscription);
+        return $subscription['trial_end'];
+    }
+
+    /**
+     * Get subscription end date
+     * @param  string $subscription - stripe unique identifier
+     * @return array
+     */
+    public function getSubscriptionEndDate($subscription)
+    {
+        $stripe = $this->getStripe();
+        $subscription = $stripe->subscriptions()->find($this->stripe_id, $subscription);
+
+        if (!$subscription['cancel_at_period_end'])
+        {
+            return null;
+        }
+        return $subscription['current_period_end'];
+    }
+
+    /**
+     * Set subscription trial end date
+     * @param  string $subscription - stripe unique identifier
+     * @return array
+     */
+    public function setTrialEndDate($subscription, Carbon $date)
+    {
+        $stripe = $this->getStripe();
+        $subscription = $stripe->subscriptions()->find($this->stripe_id, $subscription);
+        return $subscription['trial_end'];
+    }
+
+    /**
+     * Determine if the entity is within their trial period.
+     * @param  string $subscription - stripe unique identifier
+     * @return bool
+     */
+    public function isOnTrial($subscription)
+    {
+        if (! is_null($this->getTrialEndDate($subscription))) {
+            return Carbon::today()->lt($this->getTrialEndDate($subscription));
         } else {
             return false;
         }
     }
 
-    public function onGracePeriod()
+    public function endTrial($subscription)
     {
-        if (! is_null($endsAt = $this->getSubscriptionEndDate())) {
+        $params = [];
+        $params['trial_end' => 'now'];
+        return $this->updateSubscription($params);
+    }
+
+    /**
+     * Determine if the entity is on grace period after cancellation.
+     *
+     * @return bool
+     */
+    public function isOnGracePeriod($subscription)
+    {
+        if (! is_null($endsAt = $this->getSubscriptionEndDate($subscription))) {
             return Carbon::now()->lt(Carbon::instance($endsAt));
         } else {
             return false;
         }
     }
-
-    public function subscribed()
+    
+    /**
+     * Subscribe a user and student to a plan
+     * @param  string $planId    - stripe unique identifier for the plan
+     * @param  integer $studentId
+     * @return boolean
+     */
+    public function subscribeToPlan($plan, $studentId)
     {
-        if ($this->requiresCardUpFront()) {
-            return $this->stripeIsActive() || $this->onGracePeriod();
-        } else {
-            return $this->stripeIsActive() || $this->onTrial() || $this->onGracePeriod();
-        }
-    }
+        // Create stripe subscription
+        $stripe = $this->getStripe();
+        $subscription = $stripe->subscriptions()->create($this->stripe_id, [
+            'plan' => $plan
+        ]);
 
-    public function expired()
-    {
-        return ! $this->subscribed();
+        // Add row to Subscriptions model
+        $sub = new Subscription;
+        $sub->student_id = $studentId;
+        $sub->user_id = $this->id;
+        $sub->plan_id = $plan;
+        
+        return $sub->save();
     }
-
-    public function cancelled()
-    {
-        return $this->readyForBilling() && ! $this->stripeIsActive();
-    }
-
-    public function everSubscribed()
-    {
-        return $this->readyForBilling();
-    }
-
-    public function onPlan($plan)
-    {
-        return $this->stripeIsActive() && $this->subscription()->planId() == $plan;
-    }
-
-    public function requiresCardUpFront()
-    {
-        if (isset($this->cardUpFront)) {
-            return $this->cardUpFront;
-        }
-        return true;
-    }
-
-    public function readyForBilling()
-    {
-        return ! is_null($this->getStripeId());
-    }
-
-    public function stripeIsActive()
-    {
-        return $this->stripe_active;
-    }
-
-    public function setStripeIsActive($active = true)
-    {
-        $this->stripe_active = $active;
-        return $this;
-    }
-
-    public function deactivateStripe()
-    {
-        $this->setStripeIsActive(false);
-        $this->stripe_subscription = null;
-        return $this;
-    }
-
-    public function hasStripeId()
-    {
-        return ! is_null($this->stripe_id);
-    }
-
-    public function getStripeId()
-    {
-        return $this->stripe_id;
-    }
-
-    public function getStripeIdName()
-    {
-        return 'stripe_id';
-    }
-
-    public function setStripeId($stripe_id)
-    {
-        $this->stripe_id = $stripe_id;
-        return $this;
-    }
-
-    public function getStripeSubscription()
-    {
-        return $this->stripe_subscription;
-    }
-
-    public function setStripeSubscription($subscription_id)
-    {
-        $this->stripe_subscription = $subscription_id;
-        return $this;
-    }
-
-    public function getStripePlan()
-    {
-        return $this->stripe_plan;
-    }
-
-    public function setStripePlan($plan)
-    {
-        $this->stripe_plan = $plan;
-        return $this;
-    }
-
-    public function getLastFourCardDigits()
-    {
-        return $this->last_four;
-    }
-
-    public function setLastFourCardDigits($digits)
-    {
-        $this->last_four = $digits;
-        return $this;
-    }
-
-    public function getTrialEndDate()
-    {
-        return $this->trial_ends_at;
-    }
-
-    public function setTrialEndDate($date)
-    {
-        $this->trial_ends_at = $date;
-        return $this;
-    }
-
-    public function getSubscriptionEndDate()
-    {
-        return $this->subscription_ends_at;
-    }
-
-    public function setSubscriptionEndDate($date)
-    {
-        $this->subscription_ends_at = $date;
-        return $this;
-    }
-
-    public function getCurrency()
-    {
-        return 'usd';
-    }
-
-    public function getCurrencyLocale()
-    {
-        return 'en_US';
-    }
-
-    public function getTaxPercent()
-    {
-        return 0;
-    }
-
-    public function formatCurrency($amount)
-    {
-        return number_format($amount / 100, 2);
-    }
-
-    public function addCurrencySymbol($amount)
-    {
-        return '$'.$amount;
-    }
-
-    public static function getStripeKey()
-    {
-        return static::$stripeKey ?: Config::get('services.stripe.secret');
-    }
-
-    public static function setStripeKey($key)
-    {
-        static::$stripeKey = $key;
-    }
-
-    */
+}
