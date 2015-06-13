@@ -1,5 +1,5 @@
 {
-    "name": "andyjessop/billable",
+    "name": "andyjessop/hubbub-billing",
     "description": "A trait that provides cashier-like methods for cartalyst's stripe-laravel package",
     "license": "MIT",
     "authors": [

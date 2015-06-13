@@ -1,8 +1,8 @@
-<?php namespace AndyJessop\Billable;
+<?php namespace AndyJessop\HubbubBilling;
 
 use Illuminate\Support\ServiceProvider;
 
-class BillableServiceProvider extends ServiceProvider {
+class HubbubBillingServiceProvider extends ServiceProvider {
 
 	/**
 	 * Bootstrap the application services.
