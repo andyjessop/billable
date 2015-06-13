@@ -60,6 +60,7 @@ trait BillableTrait {
 
         // Add stripe_id to users table
         $this->stripe_id = $customer['id'];
+        $this->save();
 
         return $customer;
     }
@@ -274,10 +275,11 @@ trait BillableTrait {
         $stripe = $this->getStripe();
         $subscription = $stripe->subscriptions()->find($this->stripe_id, $subscription);
 
-        if (!$subscription['cancel_at_period_end'])
+        if ($subscription['cancel_at_period_end'] == false)
         {
             return null;
         }
+
         return $subscription['current_period_end'];
     }
 
@@ -346,8 +348,13 @@ trait BillableTrait {
         $sub = new Subscription;
         $sub->student_id = $studentId;
         $sub->user_id = $this->id;
-        $sub->plan_id = $plan;
+        $sub->stripe_plan = $plan;
+        $sub->stripe_subscription = $subscription['id'];
+        $sub->trial_ends_at = $subscription['trial_end'];
+        $sub->subscription_ends_at = ($subscription['cancel_at_period_end'] == false) ? $subscription['current_period_end'] : null;
         
-        return $sub->save();
+        $sub->save();
+
+        return $subscription;
     }
 }
