@@ -17,11 +17,11 @@ trait BillableTrait {
      * STRIPE
      * ======
      */
-    
-	public function getStripeKey()
-	{
-		return Config::get('services.stripe.secret');
-	}
+
+    public function getStripeKey()
+    {
+    	return Config::get('services.stripe.secret');
+    }
 
     public function getStripe()
     {
@@ -171,7 +171,7 @@ trait BillableTrait {
     public function findInvoice($invoice)
     {
         $stripe = $this->getStripe();
-        $invoice $this->invoices()->find($id);
+        $invoice = $this->invoices()->find($id);
         if ($invoice && $invoice['customer'] == $this->stripe_id) {
             return $invoice;
         }
@@ -311,8 +311,7 @@ trait BillableTrait {
 
     public function endTrial($subscription)
     {
-        $params = [];
-        $params['trial_end' => 'now'];
+        $params = ['trial_end' => 'now'];
         return $this->updateSubscription($params);
     }
 
